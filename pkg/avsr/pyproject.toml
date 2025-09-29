@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools", "Cython"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reazonspeech-avsr"
+version = "2.2.0"
+dependencies = [
+    "einops",
+    "librosa",
+    "opencv-python",
+    "python_speech_features",
+    "soundfile",
+    "torch",
+    "torchvision",
+    "transformers==4.44.1",
+]
+
+[tool.setuptools.package-dir]
+"reazonspeech.avsr" = "src"
