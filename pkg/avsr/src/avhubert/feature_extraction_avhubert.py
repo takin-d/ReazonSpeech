@@ -1,12 +1,16 @@
 import cv2
 import librosa
+import mediapipe as mp
 import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.v2 as transforms
+from numpy.typing import NDArray
 from python_speech_features import logfbank
 from transformers.feature_extraction_utils import BatchFeature
 from transformers import FeatureExtractionMixin
+
+mp_face_mesh = mp.solutions.face_mesh
 
 
 class AVHubertFeatureExtractor(FeatureExtractionMixin):
@@ -21,6 +25,11 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
         image_mean: float = 0.421,
         image_std: float = 0.165,
         sr: int = 16_000,
+        static_image_mode: bool = False,
+        refine_landmarks: bool = False,
+        min_detection_confidence: float = 0.5,
+        min_tracking_confidence: float = 0.5,
+        landmark_indices: tuple[int, ...] = (5, 411, 199, 187),  # (top, right, bottom, left) of mouth
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -37,8 +46,14 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
             ]
         )
         self.sr = sr
+        self.static_image_mode = static_image_mode
+        self.refine_landmarks = refine_landmarks
+        self.min_detection_confidence = min_detection_confidence
+        self.min_tracking_confidence = min_tracking_confidence
+        self.landmark_indices = landmark_indices
 
-    def _load_video(self, video: str | np.ndarray):
+    def _load_video(self, video: str | NDArray, extract_mouth: bool = False):
+        """Input video must be in RGB format if type is numpy array."""
         if isinstance(video, str):
             cap = cv2.VideoCapture(video)
             frames = []
@@ -46,13 +61,62 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
                 ret, frame = cap.read()
                 if not ret:
                     break
-                frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+                if not extract_mouth:  # Already extracted mouth
+                    frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+                else:
+                    frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             frames_np = np.stack(frames, axis=0)
         else:
             frames_np = video
+            if not extract_mouth:  # Already extracted mouth
+                frames_np = np.stack([cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) for frame in frames_np], axis=0)
+
+        if extract_mouth:
+            frames_np = self._extract_mouth(frames_np)
+
         return torch.from_numpy(frames_np).unsqueeze(dim=1)
 
-    def _load_audio(self, audio: str | np.ndarray):
+    def _extract_mouth(self, frames: NDArray):
+        mouth_frames = []
+        top_idx, right_idx, bottom_idx, left_idx = self.landmark_indices
+        with mp_face_mesh.FaceMesh(
+            static_image_mode=self.static_image_mode,
+            max_num_faces=1,
+            refine_landmarks=self.refine_landmarks,
+            min_detection_confidence=self.min_detection_confidence,
+            min_tracking_confidence=self.min_tracking_confidence,
+        ) as face_mesh:
+            for frame in frames:
+                res = face_mesh.process(frame)
+                if res.multi_face_landmarks is None or len(res.multi_face_landmarks) == 0:
+                    mouth_frames.append(np.zeros(self.image_crop_size, self.image_crop_size))
+                    continue
+                landmarks = res.multi_face_landmarks[0].landmark
+                top = landmarks[top_idx]
+                left = landmarks[left_idx]
+                right = landmarks[right_idx]
+                bottom = landmarks[bottom_idx]
+
+                H, W = frame.shape[:2]
+                xmax = max(top.x, left.x, right.x, bottom.x)
+                ymax = max(top.y, left.y, right.y, bottom.y)
+                xmin = min(top.x, left.x, right.x, bottom.x)
+                ymin = min(top.y, left.y, right.y, bottom.y)
+
+                patch_size = max((xmax - xmin) * W, (ymax - ymin) * H)  # To extract square region
+                half = int(patch_size / 2)
+                y_center = int(ymin * H) + int(((ymax - ymin) / 2) * H)
+                x_center = int(xmin * W) + int(((xmax - xmin) / 2) * W)
+                lip = frame[
+                    y_center - half : y_center + half,
+                    x_center - half : x_center + half,
+                    :,
+                ]
+                lip = cv2.resize(lip, (self.image_crop_size, self.image_crop_size))
+                mouth_frames.append(cv2.cvtColor(lip, cv2.COLOR_RGB2GRAY))
+        return np.stack(mouth_frames, axis=0)
+
+    def _load_audio(self, audio: str | NDArray):
         def stacker(feats, stack_order):
             feat_dim = feats.shape[1]
             if len(feats) % stack_order != 0:
@@ -71,11 +135,7 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
         fbank = stacker(fbank, self.stack_order_audio)
         return torch.from_numpy(fbank)
 
-    def _align_time_steps(
-        self,
-        audio: list[np.ndarray],
-        video: list[np.ndarray],
-    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    def _align_time_steps(self, audio: list[NDArray], video: list[NDArray]) -> tuple[list[NDArray], list[NDArray]]:
         aligned_indices = []
         for sample_audio, sample_video in zip(audio, video):
             diff = len(sample_audio) - len(sample_video)
@@ -95,8 +155,9 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
 
     def __call__(
         self,
-        raw_audio: np.ndarray | str | list[np.ndarray] | list[str] | None = None,
-        raw_video: np.ndarray | str | list[np.ndarray] | list[str] | None = None,
+        raw_audio: NDArray | str | list[NDArray] | list[str] | None = None,
+        raw_video: NDArray | str | list[NDArray] | list[str] | None = None,
+        extract_mouth: bool = False,
     ) -> BatchFeature:
         if not isinstance(raw_audio, list):
             raw_audio = [raw_audio]
@@ -104,7 +165,7 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
             raw_video = [raw_video]
 
         audio = [self._load_audio(sample) if sample is not None else None for sample in raw_audio]
-        video = [self._load_video(sample) if sample is not None else None for sample in raw_video]
+        video = [self._load_video(sample, extract_mouth) if sample is not None else None for sample in raw_video]
         for batch_idx in range(len(audio)):
             sample_a = audio[batch_idx]
             sample_v = video[batch_idx]
