@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "reazonspeech-avsr"
 version = "2.2.0"
 dependencies = [
+    "deepspeed",
     "einops",
     "librosa",
     "mediapipe",
