@@ -158,6 +158,7 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
         raw_audio: NDArray | str | list[NDArray] | list[str] | None = None,
         raw_video: NDArray | str | list[NDArray] | list[str] | None = None,
         extract_mouth: bool = False,
+        **kwargs,
     ) -> BatchFeature:
         if not isinstance(raw_audio, list):
             raw_audio = [raw_audio]

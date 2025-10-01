@@ -50,7 +50,7 @@ class AVHubertProcessor(ProcessorMixin):
             raise ValueError("You need to specify either an `raw_audio`, `raw_video` or `text` input to process.")
 
         if raw_audio is not None or raw_video is not None:
-            inputs = self.feature_extractor(raw_audio, raw_video)
+            inputs = self.feature_extractor(raw_audio, raw_video, **kwargs)
         if text is not None:
             if "return_tensors" not in kwargs.keys():
                 kwargs["return_tensors"] = "pt"
@@ -72,6 +72,8 @@ class AVHubertProcessor(ProcessorMixin):
                 )
                 for tokens in text
             ]
+
+            kwargs.pop("extract_mouth", None)
             encodings = self.tokenizer(text, **kwargs)
 
         if text is None:
