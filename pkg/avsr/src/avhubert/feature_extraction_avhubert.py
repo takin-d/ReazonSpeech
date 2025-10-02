@@ -52,7 +52,7 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
         self.min_tracking_confidence = min_tracking_confidence
         self.landmark_indices = landmark_indices
 
-    def _load_video(self, video: str | NDArray, extract_mouth: bool = False):
+    def _load_video(self, video: str | NDArray[np.uint8], extract_mouth: bool = False) -> torch.FloatTensor:
         """Input video must be in RGB format if type is numpy array."""
         if isinstance(video, str):
             cap = cv2.VideoCapture(video)
@@ -76,7 +76,7 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
 
         return torch.from_numpy(frames_np).unsqueeze(dim=1)
 
-    def _extract_mouth(self, frames: NDArray):
+    def _extract_mouth(self, frames: NDArray[np.uint8]) -> NDArray[np.uint8]:
         mouth_frames = []
         top_idx, right_idx, bottom_idx, left_idx = self.landmark_indices
         with mp_face_mesh.FaceMesh(
@@ -89,7 +89,7 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
             for frame in frames:
                 res = face_mesh.process(frame)
                 if res.multi_face_landmarks is None or len(res.multi_face_landmarks) == 0:
-                    mouth_frames.append(np.zeros(self.image_crop_size, self.image_crop_size))
+                    mouth_frames.append(np.zeros([self.image_crop_size, self.image_crop_size], dtype=np.uint8))
                     continue
                 landmarks = res.multi_face_landmarks[0].landmark
                 top = landmarks[top_idx]
@@ -112,11 +112,14 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
                     x_center - half : x_center + half,
                     :,
                 ]
-                lip = cv2.resize(lip, (self.image_crop_size, self.image_crop_size))
+                try:
+                    lip = cv2.resize(lip, (self.image_crop_size, self.image_crop_size))
+                except Exception:
+                    lip = np.zeros([self.image_crop_size, self.image_crop_size, 3], dtype=np.uint8)
                 mouth_frames.append(cv2.cvtColor(lip, cv2.COLOR_RGB2GRAY))
         return np.stack(mouth_frames, axis=0)
 
-    def _load_audio(self, audio: str | NDArray):
+    def _load_audio(self, audio: str | NDArray[np.float32]) -> torch.FloatTensor:
         def stacker(feats, stack_order):
             feat_dim = feats.shape[1]
             if len(feats) % stack_order != 0:
@@ -135,7 +138,9 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
         fbank = stacker(fbank, self.stack_order_audio)
         return torch.from_numpy(fbank)
 
-    def _align_time_steps(self, audio: list[NDArray], video: list[NDArray]) -> tuple[list[NDArray], list[NDArray]]:
+    def _align_time_steps(
+        self, audio: list[torch.FloatTensor], video: list[torch.FloatTensor]
+    ) -> tuple[list[torch.FloatTensor], list[torch.FloatTensor]]:
         aligned_indices = []
         for sample_audio, sample_video in zip(audio, video):
             diff = len(sample_audio) - len(sample_video)
@@ -155,8 +160,8 @@ class AVHubertFeatureExtractor(FeatureExtractionMixin):
 
     def __call__(
         self,
-        raw_audio: NDArray | str | list[NDArray] | list[str] | None = None,
-        raw_video: NDArray | str | list[NDArray] | list[str] | None = None,
+        raw_audio: NDArray[np.float32] | str | list[NDArray[np.float32]] | list[str] | None = None,
+        raw_video: NDArray[np.uint8] | str | list[NDArray[np.uint8]] | list[str] | None = None,
         extract_mouth: bool = False,
         **kwargs,
     ) -> BatchFeature:
