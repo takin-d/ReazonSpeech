@@ -145,7 +145,7 @@ def compute_mask_indices(
             for length in sorted(lengths, reverse=True):
                 lens = np.fromiter(
                     (e - s if e - s >= length + min_space else 0 for s, e in parts),
-                    np.int,
+                    dtype=np.int64,
                 )
                 l_sum = np.sum(lens)
                 if l_sum == 0:
@@ -583,7 +583,7 @@ class AVHubertForConditionalGeneration(AVHubertPreTrainedModel, GenerationMixin)
         if config.share_decoder_input_output_embed:
             # If this model shares lm head weights with the token embeddings,
             # you can access lm head weights that is the same as the token embeddings but
-            # the token embeddings are directly refered to instead of lm heads when training!
+            # the token embeddings are directly referred to instead of lm heads when training!
             self.lm_head.weight = self.embed_tokens.weight
         else:
             nn.init.normal_(self.lm_head.weight, mean=0, std=config.decoder_embed_dim**-0.5)

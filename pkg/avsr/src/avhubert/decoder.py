@@ -75,7 +75,7 @@ class SinusoidalPositionalEmbedding(nn.Module):
                 past_key_values_length,
                 past_key_values_length + seq_len,
                 dtype=torch.long,
-                device=self.weight.device,
+                device=self.position_embeddings.device,
             ).expand(bsz, -1)
         else:
             position_ids = position_ids.unsqueeze(0)
