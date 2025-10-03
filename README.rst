@@ -17,10 +17,15 @@ Install
 Packages
 ========
 
+`reazonspeech.avsr <pkg/avsr>`_
+
+* Audio-visual speech recognition (AVSR) models and pretrained models designed for AVSR for Japanese.
+* Implements by following Hugging Face transformers interface.
+* Capability to use Auto classes in transformers to easily use models.
+
 `reazonspeech.evaluation <pkg/evaluation>`_
 
 * Provides a set of tools to evaluate ReazonSpeech models and other speech recognition models.
-
 
 `reazonspeech.nemo.asr <pkg/nemo-asr>`_
 
