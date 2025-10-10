@@ -5,7 +5,7 @@ reazonspeech.avsr
 This supplies the main interface for using AVSR models and pretrained models designed for AVSR.
 We currently release AVHuBERT models.
 
-Our released models are on Hugging Face Hub: TBA
+Our released models and their performance results are on Hugging Face Hub: [AVista Models](https://huggingface.co/collections/enactic/avista-68edd84eea1e4049f7e72d8d)
 
 Install
 =======
