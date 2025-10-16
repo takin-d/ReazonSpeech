@@ -13,6 +13,7 @@ dependencies = [
     "mediapipe",
     "opencv-python",
     "python_speech_features",
+    "setuptools",
     "soundfile",
     "torch",
     "torchvision",
